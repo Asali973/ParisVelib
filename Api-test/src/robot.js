@@ -160,14 +160,14 @@ const chantierSchema = new mongoose.Schema({
     cp_arrondissement: String,
     date_debut: Date,
     date_fin: Date,
-    geo_point_2d: {
+    /*geo_point_2d: {
         lat: Number,
         lon: Number
     },
     geo_shape: {
         type: String, // Le type de géométrie (peut être différent selon les données)
         coordinates: [] // Les coordonnées de la géométrie
-    },
+    },*/
     localisation_detail: [String],
     surface: Number
 });
@@ -188,14 +188,14 @@ async function fetchAndSaveChantierData() {
                     cp_arrondissement: codePostale,
                     date_debut: new Date(chantier.date_debut),
                     date_fin: new Date(chantier.date_fin),
-                    geo_point_2d: {
+                   /* geo_point_2d: {
                         lat: chantier.geo_point_2d.lat,
                         lon: chantier.geo_point_2d.lon
                     },
                     geo_shape: {
                         type: chantier.geo_shape.type,
                         coordinates: chantier.geo_shape.geometry.coordinates
-                    },
+                    },*/
                     localisation_detail: chantier.localisation_detail,
                     surface: chantier.surface
                 });
