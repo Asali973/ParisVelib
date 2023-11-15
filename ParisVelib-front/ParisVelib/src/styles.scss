@@ -8,21 +8,3 @@
 html, body { height: 100%; }
 body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
 
-.map-conteneur {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    margin: 50px;
-    
-  }
-  
-  .map-border {
-    border: 5px solid rgb(40, 71, 10);
-    height: 80%;
-  }
-  
-  #map {
-    height: 100%;
-  }

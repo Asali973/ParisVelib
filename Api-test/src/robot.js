@@ -3,23 +3,28 @@ import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 dotenv.config();
 
-const meteoApiKey = process.env.METEO_API_KEY;
+const meteoApiKey = /*process.env.METEO_API_KEY;*/"fdf3d10a2bf60d4b60d54332586fe869";
+const mongoDbUrl = /*process.env.DB_CONN_STRING; */ "mongodb+srv://jfrancoismagdaline:y2.sKwtCG_bvuVD@cluster0.wcrsvft.mongodb.net";
+const dbName = "parisVelib";
 
 
-const urlStationVelib = 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/exports/json';
-const urlChantier = 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/chantiers-a-paris/exports/json';
+const urlStationVelib = 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/records?limit=100';
+const urlChantier = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/chantiers-a-paris/records?limit=100";
 
-const mongoDbUrl = "mongodb://127.0.0.1:27017";
+
+
 
 // Connexion à la base de données
 mongoose.connect(mongoDbUrl, {
     user: process.env.MONGODB_USER,
     pass: process.env.MONGODB_PASSWORD,
-    dbName: process.env.MONGODB_DB_NAME,
+    dbName: dbName,
 }).catch(error => console.error('Erreur lors de la connexion à la base de données MongoDB:', error));;
-const db = mongoose.connection;
+
 
 const { Schema } = mongoose;
+/*--------------------------- meteo----------------------------------------------*/
+
 
 const meteoSchema = new Schema({
     coord: {
@@ -62,26 +67,16 @@ async function fetchAndSaveWeatherData(city, country) {
     const urlMeteo = `https://api.openweathermap.org/data/2.5/weather?q=${city},${country}&APPID=${meteoApiKey}&units=metric`;
 
     try {
-        const response = await fetch(urlMeteo);
-        const data = await response.json();
+        let response = await fetch(urlMeteo);
+        let data = await response.json();
 
-        const newMeteoData = new Meteo({
-            coord: {
-                lon: data.coord.lon,
-                lat: data.coord.lat,
-            },
+
+        let newMeteoData = new Meteo({
+            coord: data.coord,
             weather: data.weather,
             base: data.base,
-            main: {
-                temp_min: data.main.temp_min,
-                temp_max: data.main.temp_max,
-                pressure: data.main.pressure,
-                humidity: data.main.humidity,
-            },
-            wind: {
-                speed: data.wind.speed,
-                deg: data.wind.deg,
-            },
+            main: data.main,
+            wind: data.wind,
             name: data.name,
         });
 
@@ -92,8 +87,7 @@ async function fetchAndSaveWeatherData(city, country) {
     }
 }
 
-
-
+/*----------------------------station velib ------------------------*/
 const velibStationSchema = new mongoose.Schema({
 
     capacity: Number,
@@ -114,44 +108,75 @@ const velibStationSchema = new mongoose.Schema({
     stationcode: String
 });
 
-const VelibStation = mongoose.model('VelibStation', velibStationSchema);
+const VelibStationModel = mongoose.model('stationModels', velibStationSchema);
 
-async function fetchAndSaveVelibData() {
+
+
+async function getStationVelibData() {
     try {
-        const response = await fetch(urlStationVelib);
-        const velibData = await response.json();
-        velibData.forEach(async (station) => {
-            if (station.nom_arrondissement_communes === "Paris") {
-                const newVelibData = new VelibStation({
-                    capacity: station.capacity,
-                    coordonnees_geo: {
-                        lat: station.coordonnees_geo.lat,
-                        lon: station.coordonnees_geo.lon
-                    },
-                    duedate: new Date(station.duedate),
-                    ebike: station.ebike,
-                    is_installed: station.is_installed,
-                    is_renting: station.is_renting,
-                    is_returning: station.is_returning,
-                    mechanical: station.mechanical,
-                    name: station.name,
-                    nom_arrondissement_communes: station.nom_arrondissement_communes,
-                    numbikesavailable: station.numbikesavailable,
-                    numdocksavailable: station.numdocksavailable,
-                    stationcode: station.stationcode
-                });
+        let response = await fetch(urlStationVelib);
+        return await response.json();
+    } catch (error) {
+        console.error('Erreur lors de la récupération des données des stations velib :', error);
 
-                await newVelibData.save();
-            }
+    }
+}
+/*----------------------------------------------------*/
+async function saveStationsVelibParis(stations) {
+    for (let station of stations) {
+        let stationModel = new VelibStationModel({
+            capacity: station.capacity,
+            coordonnees_geo: station.coordonnees_geo,
+            duedate: new Date(station.duedate),
+            ebike: station.ebike,
+            is_installed: station.is_installed,
+            is_renting: station.is_renting,
+            is_returning: station.is_returning,
+            mechanical: station.mechanical,
+            name: station.name,
+            nom_arrondissement_communes: station.nom_arrondissement_communes,
+            numbikesavailable: station.numbikesavailable,
+            numdocksavailable: station.numdocksavailable,
+            stationcode: station.stationcode
         });
 
-        console.log('Données des stations Vélib situées à Paris enregistrées dans la base de données.');
+        try {
+            await stationModel.save();
+
+        } catch (exception) {
+            console.error('Erreur lors de l\'enregistrement des données de la station dans la base de données :', exception);
+        }
+    }
+
+}
+
+// Fonction principale pour récupérer et enregistrer les données des stations velib
+async function fetchAndStationVelibData() {
+    try {
+        let responsedata = await getStationVelibData();
+        let maxResult = responsedata.total_count;
+
+        for (let offset = 0; offset < maxResult; offset += 100) {
+            responsedata = await getStationVelibData();
+
+            
+            // Filtrer les stations par nom_arrondissement)
+            const stationVelibParis = responsedata.results.filter(station => station.nom_arrondissement_communes.startsWith('Paris'));
+
+
+            await saveStationsVelibParis(stationVelibParis);
+        }
+
+        console.log('Données des stations Velib mises à jour.');
+
     } catch (error) {
-        console.error('Erreur lors de la récupération des données Vélib:', error);
+        console.error('Erreur lors de la récupération des données des stations velib :', error);
     }
 }
 
 
+
+/*------------------------chantier ------------------------------*/
 
 const chantierSchema = new mongoose.Schema({
 
@@ -160,69 +185,111 @@ const chantierSchema = new mongoose.Schema({
     cp_arrondissement: String,
     date_debut: Date,
     date_fin: Date,
-    /*geo_point_2d: {
+    geo_point_2d: {
         lat: Number,
         lon: Number
     },
     geo_shape: {
-        type: String, // Le type de géométrie (peut être différent selon les données)
-        coordinates: [] // Les coordonnées de la géométrie
-    },*/
+        type: {
+            type: "String"
+        },
+        geometry: {
+            type: {
+                type: "String"
+            },
+            coordinates: [[[Number]]]
+        }
+    },
     localisation_detail: [String],
     surface: Number
-});
-const Chantier = mongoose.model('Chantier', chantierSchema);
+}
+);
 
-async function fetchAndSaveChantierData() {
+
+chantierSchema.index({ geo_shape: '2dsphere' });
+const ChantierModel = mongoose.model('chantierModels', chantierSchema);
+
+
+
+const INTERVAL_24_HOURS = 24 * 60 * 60 * 1000;
+
+// Fonction pour récupérer les données des chantiers
+async function getChantierData() {
     try {
-        const response = await fetch(urlChantier);
-        const data = await response.json();
-
-        data.forEach(async (chantier) => {
-            const codePostale = chantier.cp_arrondissement;
-            // Vérifier si le code postal de l'arrondissement est entre 75000 et 75020 inclus
-            if (codePostale >= "75000" && codePostale <= "75020") {
-                const newChantierData = new Chantier({
-                    chantier_cite_id: chantier.chantier_cite_id,
-                    chantier_synthese: chantier.chantier_synthese,
-                    cp_arrondissement: codePostale,
-                    date_debut: new Date(chantier.date_debut),
-                    date_fin: new Date(chantier.date_fin),
-                   /* geo_point_2d: {
-                        lat: chantier.geo_point_2d.lat,
-                        lon: chantier.geo_point_2d.lon
-                    },
-                    geo_shape: {
-                        type: chantier.geo_shape.type,
-                        coordinates: chantier.geo_shape.geometry.coordinates
-                    },*/
-                    localisation_detail: chantier.localisation_detail,
-                    surface: chantier.surface
-                });
-
-                await newChantierData.save();
-            }
-        });
-
-        console.log('Données des chantiers situés entre 75000 et 75020 enregistrées dans la base de données.');
+        let response = await fetch(urlChantier);
+        return await response.json();
     } catch (error) {
-        console.error('Erreur lors de la récupération des données de chantier:', error);
+        console.error('Erreur lors de la récupération des données des chantiers :', error);
+        throw error; // Propagez l'erreur pour la gestion au niveau supérieur si nécessaire
     }
 }
-/*
-async function fetchAndSaveData() {
-    // Appeler les fonctions pour récupérer et enregistrer les données
-    await fetchAndSaveWeatherData('Paris', 'fr');
-    await fetchAndSaveVelibData();
-    await fetchAndSaveChantierData();
+
+async function saveChantiers(chantiers) {
+    const dateActuelle = new Date();
+
+    for (let chantier of chantiers) {
+        // Comparer la date de fin du chantier avec la date actuelle
+        const dateFinChantier = new Date(chantier.date_fin);
+
+        if (dateFinChantier > dateActuelle) {
+            let chantierModel = new ChantierModel({
+                chantier_cite_id: chantier.chantier_cite_id,
+                chantier_synthese: chantier.chantier_synthese,
+                cp_arrondissement: chantier.cp_arrondissement,
+                date_debut: chantier.date_debut,
+                date_fin: chantier.date_fin,
+                geo_point_2d: chantier.geo_point_2d,
+                geo_shape: chantier.geo_shape,
+                localisation_detail: chantier.localisation_detail,
+                surface: chantier.surface,
+            });
+
+            try {
+                await chantierModel.save();
+                //console.log('Données des chantiers enregistrées dans la base de données.');
+            } catch (exception) {
+                //console.log(exception );
+                // Gérer spécifiquement les erreurs liées à la sauvegarde des données si nécessaire
+            }
+        }
+    }
 }
 
-// Planifier la collecte de données toutes les 5 minutes (300 000 millisecondes)
-setInterval(fetchAndSaveData, 300000);*/
+// Fonction principale pour récupérer et enregistrer les données des chantiers
+async function fetchAndSaveChantierData() {
+    try {
+        let responsedata = await getChantierData();
+        let maxResult = responsedata.total_count;
 
-// Appeler les fonctions pour récupérer et enregistrer les données
-fetchAndSaveWeatherData('Paris', 'fr');
-fetchAndSaveVelibData();
-fetchAndSaveChantierData();
+        for (let offset = 0; offset < maxResult; offset += 100) {
+            responsedata = await getChantierData();
+
+            // Filtrer les chantiers par code postal (cp_arrondissement)
+            const chantiersParis = responsedata.results.filter(chantier =>
+                chantier.cp_arrondissement.startsWith('750')
+            );
+
+            await saveChantiers(chantiersParis);
+        }
+
+        console.log('Données des chantiers mises à jour.');
+
+    } catch (error) {
+        console.error('Erreur lors de la récupération des données des chantiers :', error);
+    }
+}
+
+// Planifier l'exécution de la fonction toutes les 24 heures
+setInterval(fetchAndSaveChantierData,  24 * 60 * 60 * 1000);
+//fetchAndSaveChantierData();
+//fetchAndSaveWeatherData('Paris', 'fr');
+
+// Collecter et enregistrer les données Velib toutes les 5 minutes (300 000 ms)
+setInterval(fetchAndStationVelibData, 300000);
+//fetchAndStationVelibData()
+
+
+
+
 
 
